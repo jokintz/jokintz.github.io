@@ -285,7 +285,7 @@ temp3 <- as.vector(temp3[,1])
 roc_ada <- roc(test_set$AtRisk, temp3)
 ada_auc <- auc(roc_ada)
 
-#Base Code Source: Xavier Robin, Natacha Turck, Alexandre Hainard, Natalia Tiberti, Frédérique Lisacek, Jean-Charles Sanchez and Markus Müller (2011). pROC: an open-source package for R and S+ to analyze and compare ROC curves. BMC Bioinformatics, 12, p. 77. DOI: 10.1186/1471-2105-12-77.
+#Base Code Source: Xavier Robin, Natacha Turck, Alexandre Hainard, Natalia Tiberti, FrÃ©dÃ©rique Lisacek, Jean-Charles Sanchez and Markus MÃ¼ller (2011). pROC: an open-source package for R and S+ to analyze and compare ROC curves. BMC Bioinformatics, 12, p. 77. DOI: 10.1186/1471-2105-12-77.
 
 rocobj1 <- plot.roc(smooth(roc_knn), main="ROC Curves", col="#1c61b6")
 
