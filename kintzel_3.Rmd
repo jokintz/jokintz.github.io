@@ -1,0 +1,330 @@
+---
+title: "kintzel_3"
+author: "jokintz"
+date: "April 25, 2016"
+output: html_document
+---
+
+After the linear regression analysis and logit function prediction, we turned our attention to building a predictor of a high-risk student from the attributes in the table.  Specifically we hope to use information about a student to predict if that student should be considered at-risk from an academic standpoint.  This first block of code will be used to prepare the data for use by several machine learning algorithms.
+
+```{r message=FALSE, warning=FALSE}
+library(plyr)
+library(readr)
+library(dplyr)
+
+library(mice)
+library(VIM)
+
+x <- read_csv("giftcarddataMASTER2.csv")
+x <- x %>% filter(!is.na(GPA))
+
+#remove parents and CARD columns
+x$parents = NULL
+x$CARD = NULL
+
+
+mean <- mean(x$GPA)
+sd <- sd(x$GPA)
+
+
+#change GPA column into at-risk or not-at-risk, remove old GPA
+#setting at-risk threshold
+threshold <- mean-sd
+x <- mutate(x, AtRisk = ifelse(GPA < threshold,1,0))
+x$GPA = NULL
+
+# change binary values to 1's and 0's.
+x$gender <- revalue(x$gender, c("M"="1", "F"="0"))
+x$job <- revalue(x$job, c("Y"="1", "N"="0"))
+x$club <- revalue(x$club, c("Y"="1", "N"="0"))
+x$sport <- revalue(x$sport, c("Y"="1", "N"="0"))
+x$band <- revalue(x$band, c("Y"="1", "N"="0"))
+x$iphone <- revalue(x$iphone, c("Y"="1", "N"="0"))
+x$romance <- revalue(x$romance, c("Y"="1", "N"="0"))
+
+#change all data to numeric
+x <-as.data.frame(lapply(x,as.numeric))
+
+```
+There are several NA's present in this data.  For this segment of our project we tried to maintain as  many data points as possible to help train our machines.  The next block of code contains our analysis of the missing data in an attempt to determine the best method for replacing the NAs.  After some study, we determined that the Mice library contained methods to help us impute the missing data based upon the enitre data set.  This seemed like a better methodology than simply imputing the column means.  The missing data seemed to be random and not systematic, and none of the missing data was frequent enough to warrant complete disposal of any data points.
+
+```{r message=FALSE, warning=FALSE}
+#looks for visual patterns in missing data
+#source code: http://www.r-bloggers.com/imputing-missing-data-with-r-mice-package/ by Michy Alice on 10/04/2015
+
+#library(VIM)
+aggr_plot <- aggr(x, col=c('navyblue','red'), numbers=FALSE, sortVars=TRUE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+
+
+#impute missing data using mice package
+# (Multiple Imputation by Chained Equations) 
+
+tempx <- mice(x,m=5,seed=123,print=FALSE)
+#summary(tempx)
+x <- complete(tempx,1)
+
+```
+
+Our next step was to normalize the data.  In order to keep larger variables like age to skew our results, we converted all of the numerical data to their z-score equivalents.  This should yield more accurate results in distance based comparisons.
+
+```{r message=FALSE, warning=FALSE}
+#normalize non-binary data to z-scores to prevent larger variables from having undo influence on differences
+
+x$age <- scale(x$age,center = TRUE,scale = TRUE)
+x$game_hrs <- scale(x$game_hrs,center = TRUE,scale = TRUE)
+x$siblings <- scale(x$siblings,center = TRUE,scale = TRUE)
+x$friends <- scale(x$friends,center = TRUE,scale = TRUE)
+x$books <- scale(x$books,center = TRUE,scale = TRUE)
+x$meals <- scale(x$meals,center = TRUE,scale = TRUE)
+x$study <- scale(x$study,center = TRUE,scale = TRUE)
+x$songs <- scale(x$songs,center = TRUE,scale = TRUE)
+x$mother <- scale(x$mother,center = TRUE,scale = TRUE)
+x$father <- scale(x$father,center = TRUE,scale = TRUE)
+x$absent <- scale(x$absent,center = TRUE,scale = TRUE)
+
+x <-as.data.frame(lapply(x,as.numeric))
+x$AtRisk <- as.factor(x$AtRisk)
+
+```
+
+At this point we have preapred the data set and are ready to begin construction of a few machine learning models.  Each model will require some tuning.  The hope is to find the best model for this particular data set.  First we need to create a training set and a test set:
+
+```{r message=FALSE, warning=FALSE}
+
+library(caret)
+library(class)
+library(rpart)
+library(ada)
+library(e1071)
+#library(mlbench)
+library(knitr)
+
+#create data split:  80% training, 20% test
+inTrain <- createDataPartition(y = x$AtRisk,p=0.8)
+train_set <- slice(x, inTrain$Resample1)
+test_set <- slice(x, -inTrain$Resample1)
+
+```
+
+Our first model is k-nearest neighbors.  We will create a model and check for our best guess at a good value for k using cross validation.
+
+```{r message=FALSE, warning=FALSE}
+#kNN classifier
+#library(class)
+risk_pred <- knn(train = train_set, test = test_set, cl = train_set$AtRisk, k=28)
+
+#confusionMatrix(risk_pred, test_set$AtRisk)
+
+kNN_acc <- postResample(risk_pred, test_set$AtRisk)
+kNN_acc
+
+#tune for best value of k.
+ctrl <- trainControl(method="repeatedcv",repeats = 8)
+knnFit <- train(AtRisk ~ ., data = train_set, method = "knn", trControl = ctrl, tuneLength = 22)
+plot(knnFit)
+
+```
+
+From this plot we can estimate a value of k and create out best kNN classifier:
+
+```{r message=FALSE, warning=FALSE}
+best_k = 8
+risk_pred <- knn(train = train_set, test = test_set, cl = train_set$AtRisk, k=best_k)
+confusionMatrix(risk_pred, test_set$AtRisk)
+
+kNN_acc <- postResample(risk_pred, test_set$AtRisk)
+#kNN_acc <- postResample(risk_probs, test_set$AtRisk)
+kNN_acc
+
+
+#attributes(kNN_acc)
+```
+
+
+```{r}
+
+#knn_fit <- knn3(AtRisk~.,data = train_set , k = 18)
+#f_hat <- predict(knn_fit, newdata = test_set)[,2]
+#tab <- table(pred=round(f_hat), truth=test_set$AtRisk)
+#confusionMatrix(tab)$tab
+#confusionMatrix(tab)$overall["Accuracy"]
+
+```
+
+The next model we tried is a popular boosting algorithm called 'adaboost.'  This method uses weighting to help strengthen good predictive features and weaken poor predictive ones.  We then used adaboost in concert with rpart to try to find optimal decision trees, and base our model off these results.  This process also give us the ability to look at the importance of particular features to the model.
+
+
+```{r message=FALSE, warning=FALSE}
+#library(rpart)
+#library(ada)
+control <- rpart.control(cp = -1, maxdepth = 14,maxcompete = 1,xval = 0)
+
+gen1 <- ada(AtRisk~., data = train_set, type = "gentle", control = control, iter = 100)
+gen1 <- addtest(gen1, test_set[1:18],test_set$AtRisk)
+summary(gen1)
+
+temp3 <- predict(gen1, newdata = test_set)
+#temp3 <- as.vector(temp3[,1])
+
+ada_acc <- postResample(temp3, test_set$AtRisk)
+ada_acc
+
+plot(gen1)
+varplot(gen1)
+
+```
+
+
+Another model we tried was a naive bayes classifier.  
+
+
+```{r message=FALSE, warning=FALSE}
+###Naive Bayes classifier
+
+bayes_model <- naiveBayes(train_set[1:18],train_set$AtRisk)
+pred <- predict(bayes_model,test_set[1:18])
+
+confusionMatrix(pred, test_set$AtRisk)
+
+bayes_acc <- postResample(pred, test_set$AtRisk)
+bayes_acc
+
+```
+
+
+We also tried a method based on a Support Vector Machine (SVM.)  We were unable to improve the model through the automatic tuning process, but the model did yield good results.
+
+
+```{r message=FALSE, warning=FALSE}
+#Support vector Machine (SVM)
+#library(e1071)
+svm_model<- svm(AtRisk~., data=train_set, probability = TRUE, type="C-classification")
+summary(svm_model)
+predicted <- predict(svm_model,test_set)
+confusionMatrix(predicted, test_set$AtRisk)
+svm_acc <- postResample(predicted, test_set$AtRisk)
+svm_acc
+
+
+###svm tuning (none of these improved the SVM-radial model)
+
+#svmFit <- tune(svm, AtRisk~.,data = train_set)
+
+```
+
+
+Four different models now give us a picture of what we can expect from an accuracy perspective.
+
+
+```{r message=FALSE, warning=FALSE}
+#summary of accuracy
+#library(knitr)
+results <- data_frame(method = "kNN", Accuracy = kNN_acc[1])
+results <- bind_rows(results,
+                          data_frame(method="Naive Bayes",  
+                                     Accuracy = bayes_acc[1]))
+results <- bind_rows(results,
+                          data_frame(method="SVM",  
+                                     Accuracy = svm_acc[1]))
+results <- bind_rows(results,
+                          data_frame(method="adaBoost",  
+                                     Accuracy = ada_acc[1]))
+options(digits = 3)
+results %>% kable
+
+
+
+```
+
+Can we reduce our feature set and still get good results or better results?  We attempted to apply some feature reduction techniques, and we performed some feature analysis using the mlbench library and also some random forest functions.  The mlbench information was inconclusive, but we found that a few of the features seemed to be very important to the model.
+
+```{r message=FALSE, warning=FALSE}
+
+###Feature selection/reduction using kNN model
+#library(mlbench)
+#importance <- varImp(knnFit,scale=FALSE)
+#print(importance)
+#plot(importance)
+
+#use a random forest to try and reduce features/lower overfit
+#Code source: http://machinelearningmastery.com/feature-selection-with-the-caret-r-package/, Brownlee, Jason.  11/22/2014
+control <- rfeControl(functions=rfFuncs, method="cv", number=5)
+results <- rfe(train_set[,1:18], train_set$AtRisk, sizes=c(1:18), rfeControl=control)
+print(results)
+plot(results, type=c("g", "o"))
+
+```
+
+From these results we can infer that our model needs almost all of the features to make the best predictions.  We see a small drop off in accuracy for the addition of the final feature, but tht drop off is minimal.  Most of our models are very close in accuracy score, with k-nearest neighbors having a slight edge.  We still need to look at the ROC curve and the AUC score to help us see that the classifier is a good one:
+
+```{r message=FALSE, warning=FALSE}
+
+
+library("pROC")
+
+risk_probs <- knn(train = train_set, test = test_set, cl = train_set$AtRisk, k=best_k, prob = TRUE)
+temp <- attributes(risk_probs)[3]
+roc_knn <- roc(test_set$AtRisk, temp$prob)
+#plt <- plot(roc_knn)
+knn_auc <- auc(roc_knn)
+
+SVMpredicted <- predict(svm_model,test_set,probability = TRUE)
+temp <- attributes(SVMpredicted)[4]
+temp2 <- as.vector(temp$probabilities[,1])
+roc_svm <- roc(test_set$AtRisk, temp2)
+#plt <- plot(roc_svm)
+svm_auc <- auc(roc_svm)
+
+pred_probs <- predict(bayes_model,test_set[1:18],type = "raw")
+temp2 <- as.vector(pred_probs[,1])
+roc_bayes <- roc(test_set$AtRisk, temp2)
+bayes_auc <- auc(roc_bayes)
+
+temp3 <- predict(gen1, newdata = test_set , type = "probs")
+temp3 <- as.vector(temp3[,1])
+roc_ada <- roc(test_set$AtRisk, temp3)
+ada_auc <- auc(roc_ada)
+
+#Base Code Source: Xavier Robin, Natacha Turck, Alexandre Hainard, Natalia Tiberti, Frédérique Lisacek, Jean-Charles Sanchez and Markus Müller (2011). pROC: an open-source package for R and S+ to analyze and compare ROC curves. BMC Bioinformatics, 12, p. 77. DOI: 10.1186/1471-2105-12-77.
+
+rocobj1 <- plot.roc(smooth(roc_knn), main="ROC Curves", col="#1c61b6")
+
+rocobj2 <- lines.roc(roc_svm, col="#008600")
+
+rocobj3 <- lines.roc(roc_bayes, col="#ef8600")
+
+rocobj4 <- lines.roc(roc_ada, col="#ae86e3")
+
+legend("bottomright", legend=c("kNN", "SVM", "Bayes", "adaBoost"), col=c("#1c61b6", "#008600","#ef8600","#ae86e3"), lwd=2)
+
+
+
+
+```
+
+The ROC Curves all yield similar results with the exception of our k-nearest neighbors model.  This supports the idea that kNN is our best model, as we guessed from the accuracy scores above.  The lack of granularity in the kNN model is likely due to the fixed number of neighbors, as this model is using that figure to calculate probabilites of class membership.  We have appliede a smoother to kNN to make the comparison more clear.
+
+
+```{r message=FALSE, warning=FALSE}
+results <- data_frame(method = "kNN", AUC = knn_auc)
+results <- bind_rows(results,
+                          data_frame(method="Naive Bayes",  
+                                     AUC = bayes_auc))
+results <- bind_rows(results,
+                          data_frame(method="SVM",  
+                                     AUC = svm_auc))
+results <- bind_rows(results,
+                          data_frame(method="adaBoost",  
+                                     AUC = ada_auc))
+options(digits = 3)
+results %>% kable
+
+```
+
+
+
+
+
+
+
+
