@@ -1,0 +1,856 @@
+---
+title: "Predicting Student Performance from Survey Data"
+author: "Joseph Kintzel, Bernard Mcshea and Vishal Kapoor"
+date: "May 4, 2016"
+output: html_document
+---
+## Project Introduction
+Seeking efficiency in the pursuit of education is a perpetual goal, We wish to investigate the effects of extracurricular activities and family dynamics on a student's GPA score. First, we recognize there are many factors that can influence a student's GPA that may not be causation and must investigate cautiously. The goal would be to find an optimal combination of factors that could predict GPA of a student and hopefully with this information we could recommend a student add or drop activities to help optimize their projected GPA.  
+
+A secondary use would be for a screening tool for colleges to determine which students would perform the best.  Using a predictive model or machine learning to remove some human bias. 
+
+We have used students survey with 745 sample observations from a school but did not get the full population. 
+This sample can be considered a very large random sample. Each student's GPA should be relatively independent.  Typically the grades are not directly curved, just individual tests.
+
+There are 21 total survey questions including GPA score and variables are a good mix of binary, categorical and numerical variables.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(warn=-1)
+library(tidyr)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(plyr)
+library(car)
+library(mice)
+library(VIM)
+library("pROC")
+library(caret)
+library(lattice)
+library(class)
+library(rpart)
+library(ada)
+library(e1071)
+#library(mlbench)
+library(knitr)
+library(randomForest)
+
+```
+
+##Data Wrangling starts
+We first read in the CSV file and do some mild data wrangling.
+
+```{r}
+# Read in the data.
+survey <- read_csv("giftcarddataMASTER2.csv")
+
+tab <- x <- survey #Copying into tab required at later stage
+
+# The full list of variables:
+# age,gender,job,club,sport,band,game_hrs,GPA,siblings,friends,books,meals,iphone,songs,absent,romance,study,mother,father,parents
+
+x <- x %>% filter(!is.na(age)) %>% filter(!is.na(gender)) %>% filter(!is.na(job)) %>% filter(!is.na(club)) %>% filter(!is.na(sport)) %>% filter(!is.na(band)) %>% filter(!is.na(game_hrs)) %>% filter(!is.na(GPA)) %>% filter(!is.na(siblings)) %>% filter(!is.na(friends)) %>% filter(!is.na(books)) %>% filter(!is.na(books)) %>% filter(!is.na(meals)) %>% filter(!is.na(iphone)) %>% filter(!is.na(songs)) %>% filter(!is.na(absent)) %>% filter(!is.na(romance)) %>% filter(!is.na(study)) %>% filter(!is.na(mother)) %>% filter(!is.na(father)) %>% filter(!is.na(parents))
+ 
+x <- x %>% filter(gender != "Y")                                                                            
+
+```
+
+## Including Plots. 
+From our data wrangling, we know that the data is categorical, with a large portion being binary. We quickly make a few plots to see if the data hints at any possible trends. Since we have many binary variables we start with some boxplots then move to scatterplots for the remaining variables.     
+
+```{r echo = FALSE }
+# Quickly make a few plots to see if the data hints at any possible trends.  
+# Below we can see the GPA is effected by sport, job, club, and band with respect to gender and romance. 
+#
+
+x %>% ggplot(aes(sport, GPA, col = gender)) + geom_boxplot() + facet_wrap(~romance) + 
+                                    ggtitle("The Effect of Sport and Romance on GPA")
+
+x %>% ggplot(aes(job, GPA, col = gender)) + geom_boxplot() + facet_wrap(~romance) + 
+                                    ggtitle("The Effect of a Job and Romance on GPA")
+
+
+x %>% ggplot(aes(gender, GPA,  col = gender)) + geom_boxplot() + facet_wrap(~romance) + 
+                                    ggtitle("The Effect of Gender and Romance on GPA")
+
+
+x %>% ggplot(aes(club, GPA,  col = gender)) + geom_boxplot() + facet_wrap(~romance) + 
+                                    ggtitle("The Effect of Club and Romance on GPA")
+
+
+x %>% ggplot(aes(band, GPA,  col = gender)) + geom_boxplot() + facet_wrap(~romance) + 
+                                    ggtitle("The Effect of Band and Romance on GPA")
+
+
+# We see parents’ education does not seem to have a great effect with respect to gender and GPA.
+x %>% ggplot(aes(gender, GPA,  col = gender)) + geom_boxplot() + facet_grid(mother ~ father) + 
+                                 ggtitle("The Effect of Parents Education on GPA")
+
+#not good
+x %>% filter(absent < 40) %>%  ggplot(aes(GPA, absent)) + 
+        geom_point() + ggtitle("Scatter Plot of GPA and the number of absences")
+
+#not good
+x %>% ggplot(aes(GPA, siblings)) + 
+        geom_point() + ggtitle("Scatter Plot of GPA and siblings")
+
+#Not good
+x %>% ggplot(aes(GPA, game_hrs)) + 
+        geom_point() + ggtitle("Scatter Plot of GPA and hours playing games")
+
+x %>% ggplot(aes(GPA, father)) + 
+        geom_point() + ggtitle("Scatter Plot of GPA and father's education level")
+
+x %>% ggplot(aes(GPA, age)) + 
+        geom_point() + ggtitle("Scatter Plot of GPA and age of the student")
+
+x %>% ggplot(aes(GPA, study)) + 
+        geom_point() + ggtitle("Scatter Plot of GPA and hours studying")
+
+
+```
+
+##Boxplots and Scatterplots 
+First considering the boxplots, we can see there might be an effect between; sport, job, club, and band with respect to gender and romance. The first three scatter plots (absent, siblings, game_hrs) did not show a linear relationship. Looking at the relationships between GPA and fathers education, age, and study we can see a linear effect, however the data is highly categorical.  - More Data wrangling
+
+```{r}
+x <- x %>% mutate(gender_bin = ifelse(gender == "F", 0, 1)) 
+
+x <- x %>% mutate(job = ifelse(job == "N", 0, 1))  
+x <- x %>% mutate(club = ifelse(club == "N", 0, 1))
+
+x <- x %>% mutate(sport = ifelse(sport == "N", 0, 1))  
+x <- x %>% mutate(band = ifelse(band == "N", 0, 1))
+
+x <- x %>% mutate(iphone = ifelse(iphone == "N", 0, 1))  
+x <- x %>% mutate(romance = ifelse(romance == "N", 0, 1))
+
+x <- x %>% mutate(parents = ifelse(parents == "M", 1, 0))
+
+```
+
+# Linear Regression
+We know that the data is highly categorical, so we will keep an eye out for Linearity condition. We will try a few models. Then we will explore if the conditions of linear regression (Linearity, Zero Mean, Constant Variance, Independence and Random, and Normality) are met for the most promising models. 
+
+```{r}
+# Just try a lot of factors at once and see what happens.
+fit <- x %>% lm(GPA ~ gender_bin + romance + age + club + study , data = .)
+summary(fit)
+
+fit <- x %>% lm(GPA ~ gender_bin + romance, data = .)
+summary(fit)
+```
+
+In the box plots we saw gender and romance influence other activities and thus we start by investigating here. Surprisingly, both gender and romance have p-values greater then 0.05 thus we fail to reject the null hypothesis, hence we can say both of these terms can not be used to explain the GPA. The R^2-adjusted is 0.1818 thus our model only accounts for 18.18% of GPA. We will not consider this model any further. 
+
+```{r}
+
+assess_linear_model <- function(fit) {
+  
+  plot(fit)
+
+  #ggplot(fit, aes(sample = fit$residuals)) + stat_qq(aes(sample=fit$residuals)) + geom_abline(intercept = 0, slope = .5)
+  
+  #qqplot(resid(fit), predict(fit, newdata = x, type = "response"))
+  #qqline(resid(fit))
+  
+  hist(resid(fit))
+ 
+  # standardized residuals
+  plot(predict(fit, newdata = x, type = "response"), resid(fit)) 
+  abline(0,0)
+  
+} 
+
+fit <- x %>% lm(GPA ~ club + father + study + age + siblings + meals, data = .)
+summary(fit)
+assess_linear_model(fit)
+
+
+```
+
+
+# A good model and a closer look at our assumptions.
+
+GPA ~ club + father + study + age + siblings + meals is an interesting model since all betas have a p-value less then 0.05 we can reject the null hypothesis in all cases. Thus each beta has significance.  The R^2-Adjusted give us concern since it is only 0.2292 or 22.92%. 
+
+Lets take a moment and assess our assumptions for linear regression.
+
+# Assumptions: 
+
+Linearity: The data is highly categorical as we saw with the box and scatter plots in the first section of data exploration.  
+
+Zero Mean: The distribution of the errors is centered at zero.  We meet this assumption because we are using least squares regression.
+
+Constant Variance: We can visually assess this assumption checking the scatterplot of the residuals versus the predicted values above. The residual errors plotted versus their fitted values looks a little clustered around 4.0, however over all, the points are less then 2 standard deviations away.
+
+Independence and Random: We can make the assumption of independence among our observations via the data collection methodology.
+
+Normality: The Q-Q plot has tails however over all it looks pretty good. The histogram of the residual is approximately normal with slightly more values above zero. 
+
+Given our difficulty demonstrating linearity and the low R^2-adjusted of only 22.92% we will move to Logit regression. 
+
+
+Let us explore a few models to convince ourselves that we can not improve on R^2-adjusted of only 22.92%.
+```{r}
+
+
+# Good simple model.
+fit <- x %>% lm(GPA ~ father + club + study, data = .)
+summary(fit)
+assess_linear_model(fit)
+
+
+```
+
+The Normal Q-Q plot has tails, Constant Variance may be an issue, and the R^2-adjusted of 0.2074 lead us to abandon this model.
+
+
+# Let's try combining some variables 
+```{r}
+
+x <- x %>% mutate(parents_education = mother + father) 
+x <- x %>% mutate(extra_curricular = band + club + sport)
+x <- x %>% mutate(time_working = absent + study) # not a good combo I will work on this.
+x <- x %>% mutate(friends_siblings = ifelse(friends == 1 & siblings == 1, 1, 0))
+x <- x %>% mutate(female_romance = ifelse(gender == 0 & romance == 1, 1, 0))
+x <- x %>% mutate(male_romance = ifelse(gender == 1 & romance == 1, 1, 0))
+
+
+fit <- x %>% lm(GPA ~ parents_education + extra_curricular + time_working + friends_siblings + female_romance + male_romance, data = .)
+summary(fit)
+assess_linear_model(fit)
+
+```
+
+The Normal Q-Q plot has tails, Constant Variance is an issue, and the R^2-adjusted of 0.1264 lead us to abandon this model. Based on the standardized residual plot this model should not be used.
+
+```{r}
+
+# Not good R^2-adjusted = 0.1747
+# There are tails on the Normal Q-Q plot however this model could be used, but the low R^2-adjusted should rule out the use of this model.
+fit <- x %>% lm(GPA ~ parents_education + extra_curricular + absent + study + meals , data = .)
+summary(fit)
+assess_linear_model(fit)
+
+```
+
+The Normal Q-Q plot has a notable tail at the theoretical quantity -2 and the R^2-adjusted of 0.1747 leads us to abandon this model. 
+
+Let us now move to Logit regression.
+
+# Logit
+I am defining better then average GPA as one standard deviation above the mean.
+
+```{r}
+
+better_then_average_GPA <- mean(x$GPA) + abs(sd(x$GPA))
+x <- x %>% mutate(good_GPA = ifelse(GPA >= better_then_average_GPA, 1, 0))
+
+model_eval <- function(mylogit) {
+  
+  tmp <- data.frame(mylogit$coefficients, exp(coef(mylogit)))
+  tmp
+  
+  # The chi-square of null.deviance - deviance with df.null - df.residual degrees of 
+  # freedom and an associated p-value of less than 0.001 tells us that our over all 
+  # model as a whole fits significantly better than an empty model. 
+  #
+  tmp <- with(mylogit, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE)) 
+  cat("The chi-square of the model is:", tmp, "is < p-value 0.001:", (tmp < 0.001), "\n")
+
+  # This is sometimes called a likelihood ratio test (the deviance residual is -2*log likelihood). 
+  cat("The likelihood ratio test:", logLik(mylogit), "\n")
+  
+  cat("Odds Ratios and 95% Confidence Intervals \n")
+  exp(cbind(OR = coef(mylogit), confint(mylogit)))
+  
+  anova(mylogit, test="Chisq")
+  
+}
+
+
+# starting point. 
+mylogit <- x %>% glm(good_GPA ~ mother + age + father + band + club + sport + romance, data = ., family = "binomial")
+summary(mylogit)
+model_eval(mylogit)
+
+```
+With this first kitchen sink model we see that mothers education, students age, and if they are in a club may be interesting to consider further.  The chi-square of the model is less then 0.001 so the model as a whole does have an effect of explaining the data as we reject the null hypotheses. Lets us continue to explore other models.
+
+
+```{r}
+
+# Good AIC.  This was the largest number of variables I could get and still have low p-values.
+mylogit <- x %>% glm(good_GPA ~ age + father + band + club, data = ., family = binomial("logit"))
+summary(mylogit)
+model_eval(mylogit)
+
+```
+Each of the predictors has a p-value less then 0.05 thus we can reject the null hypotheses for each.  The chi-square of the model is less then 0.001 so the model as a whole does have an effect of explaining the data as we reject the null hypotheses. Looking at the log odds of the coefficients we see that age, father’s education level, and band seem to all have log odds less then 2.  This model has a high number of terms and still has low p-values for the predictors. 
+
+
+```{r}
+ 
+mylogit <- x %>% glm(good_GPA ~ club + father + study, data = ., family = binomial("logit"))
+summary(mylogit)
+model_eval(mylogit)
+
+```
+Interesting that father’s education drops out with a p-value of 0.61 when it had been so important in other models. Lets continue exploring.
+
+
+```{r}
+
+mylogit <- x %>% glm(good_GPA ~ parents_education + extra_curricular, data = ., family = binomial("logit"))
+summary(mylogit)
+model_eval(mylogit)
+
+```
+The chi-square of the model is: 0.001468482 is > p-value 0.001 No further consideration of this models is needed since we fail to reject the null hypotheses. 
+
+
+
+```{r}
+##Best model!
+mylogit <- x %>% glm(good_GPA ~ club + study + parents + age + band, data = ., family = binomial("logit"))
+
+summary(mylogit)
+model_eval(mylogit)
+
+# let's evaluate the model further 
+
+
+# changing variables to not have zero
+x <- x %>% mutate(club_nz = ifelse(club == "0", 1, 2))
+x <- x %>% mutate(band_nz = ifelse(band == "0", 1, 2))
+x <- x %>% mutate(parents_nz = ifelse(parents == "0", 1, 2))
+
+x <- x %>% mutate(study_nz = (study + 1))
+
+
+#boxTidwell(good_GPA ~ club_nz + study_nz + parents_nz + age + band_nz, data=x, max.iter = 7)
+
+boxTidwell(good_GPA ~ study_nz + age, ~ club_nz + parents_nz + band_nz, data=x, max.iter = 7)
+rm(x,fit)
+```
+
+Each of the predictors has a p-value less then 0.05 thus we can reject the null hypotheses for each. The chi-square of the model is less then 0.001 so the model as a whole does have an effect of explaining the data as we reject the null hypotheses. Looking at the log odds of the coefficients we see that club and parents have the two highest log odds.  Lets investigate this model further. 
+
+#Assumptions: 
+
+Linearity: The predictors club, parents, and band are binary thus linearity is automatic. Study and age are categorical and thus we will look at the Box Tidwell for study and age excluding the other binary variables. Since p-value > 0.05 for both age and study, we fail to reject the null hypotheses. This suggests that we meet the condition of linearity.    
+
+Randomness: AP High School Statistics students administered the survey. They made an attempt to reach all the students in the school, but did not get the full population.  I'd consider it a very large random sample.  
+
+Independence: Each student's GPA should be relatively independent.  Typically the grades are not directly curved, just individual tests.  Overall independence should not be an issue. 
+
+
+H0: β1 = 0
+Ha: β1 ≠ 0
+The odds ratio is Exp(B_club) = Exp(2.013) = 7.483. If a student is in a club, the odds of their GPA being above average increase by a factor of 7.483. Since p-value < 0.001, we reject the null hypothesis, suggesting there is a significant log-linear relationship between whether a student is in a club and the odds of their GPA being above average.
+
+We are 95% confident that the true odds ratio is between 2.689 and 31.142. Since the 95% confidence interval of the odds ratio does not contain the value 1.0, the association is statistically significant at alpha = 0.05.
+
+
+H0: β2 = 0
+Ha: β2 ≠ 0
+The odds ratio is Exp(B_study) = Exp(0.276) = 1.318. If a student studies one hour more, the odds of their GPA being above average increase by a factor of 1.318. Since p-value < 0.01, we reject the null hypothesis, suggesting there is a significant log-linear relationship between how much a student studies and the odds of their GPA being above average.
+
+We are 95% confident that the true odds ratio is between 1.100 and 1.585. Since the 95% confidence interval of the odds ratio does not contain the value 1.0, the association is statistically significant at alpha = 0.05.
+
+H0: β3 = 0
+Ha: β3 ≠ 0
+The odds ratio is Exp(B_parents) = Exp(0.990) = 2.691. If a student's parents are married, the odds of their GPA being above average increase by a factor of 2.691. Since p-value < 0.05, we reject the null hypothesis, suggesting there is a significant log-linear relationship between a student’s parents being married and the odds of their GPA being above average.
+
+We are 95% confident that the true odds ratio is between 1.254 and 6.698. Since the 95% confidence interval of the odds ratio does not contain the value 1.0, the association is statistically significant at alpha = 0.05.
+
+H0: β4 = 0
+Ha: β4 ≠ 0
+The odds ratio is Exp(B_age) = Exp(0.554) = 1.740. If a student is one year older, the odds of their GPA being above average increase by a factor of 1.740. Since p-value < 0.001, we reject the null hypothesis, suggesting there is a significant log-linear relationship between how much a student studies and the odds of their GPA being above average.
+
+We are 95% confident that the true odds ratio is between 1.378 and 2.228. Since the 95% confidence interval of the odds ratio does not contain the value 1.0, the association is statistically significant at alpha = 0.05.
+
+H0: β5 = 0
+Ha: β5 ≠ 0
+The odds ratio is Exp(B_band) = Exp(0.503) = 1.653, If a student is in band, the odds of their GPA being above average increase by a factor of 1.653. Since p-value < 0.05, we reject the null hypothesis, suggesting there is a significant log-linear relationship between whether a student is in band and the odds of their GPA being above average.
+
+We are 95% confident that the true odds ratio is between 0.998 and 2.730. Since the 95% confidence interval of the odds ratio does not contain the value 1.0, the association is statistically significant at alpha = 0.05.
+
+
+
+#Correlation and covariance 
+Covariance - It is a statistical measure used to analyze linear relationships between two variables, and similar to correlation and linear regression.
+Categorical/numerical as follows:
+M = married, D = divorced, C = it's complicated
+Education levels
+1.	some high school
+2.	high school graduate
+3.	some college
+4.	associate or bachelor degree
+5.	master's degree or higher
+
+```{r echo= FALSE}
+#Using various packages for data wrangling
+tab <- tab %>% filter(!is.na(GPA))
+```
+
+Convert to binary variables which are non-numerical / categorical(dichotomous) variables and entire data set as numerical.
+```{r echo= FALSE}
+tab$gender <- revalue(tab$gender, c("F"="0", "M"="0"))
+tab$job <- revalue(tab$job, c("Y"="1", "N"="0"))
+tab$club <- revalue(tab$club, c("Y"="1", "N"="0"))
+tab$sport <- revalue(tab$sport, c("Y"="1", "N"="0"))
+tab$band <- revalue(tab$band, c("Y"="1", "N"="0"))
+tab$iphone <- revalue(tab$iphone, c("Y"="1", "N"="0"))
+tab$romance <- revalue(tab$romance, c("Y"="1", "N"="0"))
+tab$parents <- revalue(tab$parents, c("M"="1", "D"="2", "C"="3"))
+tab <-as.data.frame(lapply(tab,as.numeric))
+
+```
+
+#Descriptive statistics 
+We can get summary statistics of the data for each of variable GPA and other other variables like Club/study/sport/parent/father under comparison.
+Looking at segregation of the dataset by club for any identifyable impact with various variables by categories like Club vs Non-club partitioning. 
+
+```{r echo= FALSE}
+by(tab$GPA,tab$club ,summary)
+```
+
+We get summary statistics for variable study by grouping into each type of study under comparison with GPA  - Study is factor of Number of hours/week.
+```{r echo= FALSE}
+##We get summary statistics of the data for each of the variable study, the groups under ##comparison - Number of hours/week
+by(tab$GPA,tab$study ,summary)
+```
+#Summary statistics between GPA Vs Parent
+```{r echo= FALSE}
+##We get summary statistics of the data for each of the categories of the categorical #variable parent, the groups under ##comparison - Different categories of parents - #married/divorced or complicated
+
+by(tab$GPA,tab$parent ,summary)
+
+##We get summary statistics of the data for each of the categories of the variable parent #education 
+by(tab$GPA,tab$father ,summary)
+
+```
+As Above , different variables when grouped with GPA did not depicated any significant #differences in distributions. Distributional Difference in Median or Mean from above set of variables is negligible and hence not continuing this analysis.
+
+It is also necessary to inspect the relationship between the covariates like study, parents #eduction, club,sports e.t.c and the response variable GPA. If there is no relationship between a covariate and a re-sponse #variable, there is no point in ##controlling for the covariate, or to incorporate it in a #response model. We need to inspect the direction, size and form of the relationship between variables and GPA for each group separately.
+
+```{r echo= FALSE}
+
+##Creating a subset of data:
+tab1 <- tab %>% select(club,age,band,sport,GPA,study,parents)
+```
+#Significance test using  Kendall's Tau and Spearman
+Below is correlation matrix  - It's just a table in which variables like club,age,band,sport,study,parents and GPA is listed in both the column headings and row headings, and each cell of the table (i.e. matrix) is the correlation between the variables that make up the column and row headings
+
+Kendall's tau-b coefficient test as it is more effective in determining whether variables  in data set are correlated in case of parametric variables.
+
+```{r echo= FALSE}
+kable(cor(tab1[-4],use = "pairwise.complete",method = "kendall"))
+```
+
+As dataset is non-parametric, Spearman testis conducted to assesses how well the relationship between two variables can be described using a monotonic function and it is flexible enough for variables below:
+
+```{r echo= FALSE}
+##Using spearman
+kable(cor(tab1[-4],use = "pairwise.complete",method = "spearman"))
+#Correlation between GPA and other variables should be substantive for any covariate adjust-
+##ment to be meaningful and effective.No distinct and measurable relationship between above #variables
+
+```
+
+The pairs plot will be used to compare all the data in the selected range with all the other columns on a one to one basis. This is done to identify relationship between two variables. In order to show this I will create six (6) variable. The variables will be validated for any uniform relationship
+
+#As below pairs between variables( club-band-gpa-study) is shown with no signicant relationship among  variables 
+
+```{r echo= FALSE}
+pairs(~club+band+GPA+study,data = tab, lower.panel=panel.smooth, col = "blue")
+```
+
+Correlation between GPA and other variables should be substantive for any covariate adjustment to be meaningful and effective. No distinct and measurable relationship between above variables as depicted by correlation matrix and plots of pair of variables.
+
+Corelation test conducated as follows:
+Test for Association/Correlation Between Pairs with p values/confidence levels -
+
+```{r echo= FALSE}
+##Test for Association/Correlation Between Pairs with p values/confidence levels
+cor.test(~club+GPA,  data = tab,method = "kendall")
+
+cor.test(~study+GPA,  data = tab)
+##p-value = 0.006
+```
+
+The above low p-value does NOT measure the strength of correlation. It measures how likely it could have arisen in case there actually was no effect with GPA  signifies no strong #corelation
+No proven impact of club/sport/siblings over GPA
+To prove that no substantive linear relation exists between  variables, we will draw plots for variables as below 
+
+```{r echo= FALSE}
+#Again below plot depicts no linear relationship
+tab %>% ggplot(aes(club, GPA, col = age)) + geom_boxplot() +facet_wrap(~parents) + 
+                                              ggtitle("Analysis of impact for parents and club on GPA")
+tab %>% ggplot(aes(study, GPA, col = father)) + geom_boxplot() +
+                                              ggtitle("Analysis of impact for study on GPA")
+```
+
+No significant linear relationship established between GPA and Club/parents/study 
+Hence, the various tests performed above for correlation did not proved any noticeable linear relationship.
+
+#Covariance - We will validiate above findings of no linear relationship by using covariance. 
+we will use variables as proved above in correlation (club,age,band,study,parents) compared with GPA . This will help us to understand the probabilistic behaviour/ joint behaviour of variables:
+Creating covariance matrix and pairs on entire data set
+```{r echo= FALSE}
+##Get covariance matrix - Complete table with all variables
+kable(cov(tab1[-4],use = "pairwise.complete"))
+```
+As above, low Covariance values imply no significant relationship (study has low value relationship with GPA but cannot be proved further)
+
+#Pairwise comparison again:
+Identifying / analysing any pairwise relationship for Total data set with 21 variables by drawing pair wise 1*1 plot to confirm that no significant relationship exists between any variables.  ( ref code for details)
+```{r eval= FALSE }
+##Identifying / analysing any pairwise relationship for Total data set with 21 variables by drawing pair wise 1*1 plot to confirm that no significant relationship exists between any variables.
+pairs(cov(tab1,use = "pairwise.complete"))
+##Another pair check for any relation
+
+pairs(c,main = "Simple Scatterplot Matrix of covariance for GPA vs different variables", col = "red")
+
+```
+
+Above pair wise relationship does not have significant covariance relationship between varables
+
+Covariance for few variables - club/age/band/sport/GPA/Study/parents - As Covariance, unlike  correlation, is not constrained to being between -1 and 1. But the sign will always be the same, and a covariance=0 has 
+the exact same meaning as a correlation=0-no linear relationship.
+Drawing plots again for covariance which proves that there is low relationship between Study and GPA
+```{r echo= FALSE }
+c <- cov(tab1[2], use = "pairwise.complete.obs" , method = "pearson") 
+c
+##Drawing plot / histogram for reference
+#hist(c$study)
+##No relationship between variables using covariance matrix created
+#plot(c)
+tab1 %>% ggplot(aes(GPA, study)) + 
+        geom_point() + ggtitle(" Plot of GPA and study hours")
+```
+
+Hence, as above analysis depicted that no substantial relationship is established between different variables like Club/age/band/parents/study with GPA . By using linear models - Correlation and covariance, we proved that no significant effect on GPA score of students. Also,hypothesis and confidence has been proved in previous section.
+
+Howoever, only a very low value of study variable may have effect on GPA which has been proved earlier by logit model and be followed in machine learning. 
+
+Note - More details about plot/pairs for entire dataset in rmd code.
+
+
+#Machine Learning
+After the linear regression analysis and logit function prediction, we turned our attention to building a predictor of an at-risk student from the attributes in the table.  Specifically we hope to use information about a student to predict if that student should be considered at-risk from an academic standpoint.  For this part of the project, we are classifying an at-risk student as one that performs below one standard deviation from the mean.
+
+```{r echo= FALSE}
+x <- survey
+x <- x %>% filter(!is.na(GPA))
+
+#remove parents and CARD columns
+x$parents = NULL
+x$CARD = NULL
+
+
+mean <- mean(x$GPA)
+sd <- sd(x$GPA)
+
+
+#change GPA column into at-risk or not-at-risk, remove old GPA
+#setting at-risk threshold
+threshold <- mean-sd
+x <- mutate(x, AtRisk = ifelse(GPA < threshold,1,0))
+x$GPA = NULL
+
+# change binary values to 1's and 0's.
+x$gender <- revalue(x$gender, c("M"="1", "F"="0"))
+x$job <- revalue(x$job, c("Y"="1", "N"="0"))
+x$club <- revalue(x$club, c("Y"="1", "N"="0"))
+x$sport <- revalue(x$sport, c("Y"="1", "N"="0"))
+x$band <- revalue(x$band, c("Y"="1", "N"="0"))
+x$iphone <- revalue(x$iphone, c("Y"="1", "N"="0"))
+x$romance <- revalue(x$romance, c("Y"="1", "N"="0"))
+
+#change all data to numeric
+x <-as.data.frame(lapply(x,as.numeric))
+
+```
+
+There are several NA's present in this data.  For this segment of our project we tried to maintain as  many data points as possible to help train our machines.  The next block of code contains our analysis of the missing data in an attempt to determine the best method for replacing the NAs.  After some study, we determined that the Mice library contained methods to help us impute the missing data based upon the enitre data set.  This seemed like a better methodology than simply imputing the column means.  The missing data seemed to be random and not systematic, and none of the missing data was frequent enough to warrant complete disposal of any data points.
+
+```{r message=FALSE, warning=FALSE}
+#looks for visual patterns in missing data
+#source code: [3]
+
+#library(VIM)
+aggr_plot <- aggr(x, col=c('navyblue','red'), numbers=FALSE, sortVars=TRUE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+
+
+#impute missing data using mice package
+# (Multiple Imputation by Chained Equations) 
+
+tempx <- mice(x,m=5,seed=123,print=FALSE)
+#summary(tempx)
+x <- complete(tempx,1)
+
+```
+
+Our next step was to normalize the data.  In order to keep larger variables like age to skew our results, we converted all of the numerical data to their z-score equivalents.  This should yield more accurate results in distance based comparisons.
+
+```{r message=FALSE, warning=FALSE}
+#normalize non-binary data to z-scores to prevent larger variables from having undo influence on differences
+
+x$age <- scale(x$age,center = TRUE,scale = TRUE)
+x$game_hrs <- scale(x$game_hrs,center = TRUE,scale = TRUE)
+x$siblings <- scale(x$siblings,center = TRUE,scale = TRUE)
+x$friends <- scale(x$friends,center = TRUE,scale = TRUE)
+x$books <- scale(x$books,center = TRUE,scale = TRUE)
+x$meals <- scale(x$meals,center = TRUE,scale = TRUE)
+x$study <- scale(x$study,center = TRUE,scale = TRUE)
+x$songs <- scale(x$songs,center = TRUE,scale = TRUE)
+x$mother <- scale(x$mother,center = TRUE,scale = TRUE)
+x$father <- scale(x$father,center = TRUE,scale = TRUE)
+x$absent <- scale(x$absent,center = TRUE,scale = TRUE)
+
+x <-as.data.frame(lapply(x,as.numeric))
+x$AtRisk <- as.factor(x$AtRisk)
+
+```
+
+At this point we have prepared the data set and are ready to begin construction of a few machine learning models.  Each model will require some tuning.  The hope is to find the best model for this particular data set.  First we need to create a training set and a test set:
+
+```{r message=FALSE, warning=FALSE}
+#create data split:  80% training, 20% test
+inTrain <- createDataPartition(y = x$AtRisk,p=0.8)
+train_set <- slice(x, inTrain$Resample1)
+test_set <- slice(x, -inTrain$Resample1)
+
+```
+
+Our first model is k-nearest neighbors.  We will create a model and check for our best guess at a good value for k using cross validation.
+
+```{r message=FALSE, warning=FALSE}
+#kNN classifier
+#library(class)
+risk_pred <- knn(train = train_set, test = test_set, cl = train_set$AtRisk, k=28)
+
+#confusionMatrix(risk_pred, test_set$AtRisk)
+
+kNN_acc <- postResample(risk_pred, test_set$AtRisk)
+kNN_acc
+
+#tune for best value of k.
+ctrl <- trainControl(method="repeatedcv",repeats = 8)
+knnFit <- train(AtRisk ~ ., data = train_set, method = "knn", trControl = ctrl, tuneLength = 22)
+plot(knnFit)
+
+```
+#Estimate k value
+From this plot we can estimate a value of k and create our best kNN classifier:
+
+```{r message=FALSE, warning=FALSE}
+best_k = 8
+risk_pred <- knn(train = train_set, test = test_set, cl = train_set$AtRisk, k=best_k)
+confusionMatrix(risk_pred, test_set$AtRisk)
+
+kNN_acc <- postResample(risk_pred, test_set$AtRisk)
+#kNN_acc <- postResample(risk_probs, test_set$AtRisk)
+kNN_acc
+
+
+#attributes(kNN_acc)
+```
+
+
+```{r}
+
+#knn_fit <- knn3(AtRisk~.,data = train_set , k = 18)
+#f_hat <- predict(knn_fit, newdata = test_set)[,2]
+#tab <- table(pred=round(f_hat), truth=test_set$AtRisk)
+#confusionMatrix(tab)$tab
+#confusionMatrix(tab)$overall["Accuracy"]
+
+```
+
+The next model we tried is a popular boosting algorithm called 'adaboost.'  This method uses weighting to help strengthen good predictive features and weaken poor predictive ones.  We then used adaboost in concert with rpart to try to find optimal decision trees, and base our model off these results.  This process also gives us the ability to look at the importance of particular features to the model.
+
+
+```{r message=FALSE, warning=FALSE}
+#library(rpart)
+#library(ada)
+control <- rpart.control(cp = -1, maxdepth = 14,maxcompete = 1,xval = 0)
+
+gen1 <- ada(AtRisk~., data = train_set, type = "gentle", control = control, iter = 100)
+gen1 <- addtest(gen1, test_set[1:18],test_set$AtRisk)
+summary(gen1)
+
+temp3 <- predict(gen1, newdata = test_set)
+#temp3 <- as.vector(temp3[,1])
+
+ada_acc <- postResample(temp3, test_set$AtRisk)
+ada_acc
+
+plot(gen1)
+varplot(gen1)
+
+```
+
+Another model we tried was a naive bayes classifier.  
+
+```{r message=FALSE, warning=FALSE}
+###Naive Bayes classifier
+
+bayes_model <- naiveBayes(train_set[1:18],train_set$AtRisk)
+pred <- predict(bayes_model,test_set[1:18])
+
+confusionMatrix(pred, test_set$AtRisk)
+
+bayes_acc <- postResample(pred, test_set$AtRisk)
+bayes_acc
+
+```
+
+We also tried a method based on a Support Vector Machine (SVM.)  We were unable to improve the model through the automatic tuning process, but the model did yield good results.
+```{r message=FALSE, warning=FALSE}
+#Support vector Machine (SVM)
+#library(e1071)
+svm_model<- svm(AtRisk~., data=train_set, probability = TRUE, type="C-classification")
+summary(svm_model)
+predicted <- predict(svm_model,test_set)
+confusionMatrix(predicted, test_set$AtRisk)
+svm_acc <- postResample(predicted, test_set$AtRisk)
+svm_acc
+
+
+###svm tuning (none of these improved the SVM-radial model)
+
+#svmFit <- tune(svm, AtRisk~.,data = train_set)
+
+```
+
+Four different models now give us a picture of what we can expect from an accuracy perspective.
+```{r message=FALSE, warning=FALSE}
+#summary of accuracy
+#library(knitr)
+results <- data_frame(method = "kNN", Accuracy = kNN_acc[1])
+results <- bind_rows(results,
+                          data_frame(method="Naive Bayes",  
+                                     Accuracy = bayes_acc[1]))
+results <- bind_rows(results,
+                          data_frame(method="SVM",  
+                                     Accuracy = svm_acc[1]))
+results <- bind_rows(results,
+                          data_frame(method="adaBoost",  
+                                     Accuracy = ada_acc[1]))
+options(digits = 3)
+results %>% kable
+
+
+
+```
+
+Can we reduce our feature set and still get good results or better results?  We attempted to apply some feature reduction techniques, and we performed some feature analysis using the mlbench library and also some random forest functions.  The mlbench information was inconclusive, but we found that a few of the features seemed to be very important to the model.
+
+```{r message=FALSE, warning=FALSE}
+
+###Feature selection/reduction using kNN model
+#library(mlbench)
+#importance <- varImp(knnFit,scale=FALSE)
+#print(importance)
+#plot(importance)
+
+#use a random forest to try and reduce features/lower overfit
+#Code source: [4]
+control <- rfeControl(functions=rfFuncs, method="cv", number=5)
+results <- rfe(train_set[,1:18], train_set$AtRisk, sizes=c(1:18), rfeControl=control)
+print(results)
+plot(results, type=c("g", "o"))
+
+```
+
+From these results we can infer that our model needs almost all of the features to make the best predictions.  We see a small drop off in accuracy for the addition of the final feature, but tht drop off is minimal.  Most of our models are very close in accuracy score, with k-nearest neighbors having a slight edge.  We still need to look at the ROC curve and the AUC score to help us see that the classifier is a good one:
+
+```{r message=FALSE, warning=FALSE}
+risk_probs <- knn(train = train_set, test = test_set, cl = train_set$AtRisk, k=best_k, prob = TRUE)
+temp <- attributes(risk_probs)[3]
+roc_knn <- roc(test_set$AtRisk, temp$prob)
+#plt <- plot(roc_knn)
+knn_auc <- auc(roc_knn)
+
+SVMpredicted <- predict(svm_model,test_set,probability = TRUE)
+temp <- attributes(SVMpredicted)[4]
+temp2 <- as.vector(temp$probabilities[,1])
+roc_svm <- roc(test_set$AtRisk, temp2)
+#plt <- plot(roc_svm)
+svm_auc <- auc(roc_svm)
+
+pred_probs <- predict(bayes_model,test_set[1:18],type = "raw")
+temp2 <- as.vector(pred_probs[,1])
+roc_bayes <- roc(test_set$AtRisk, temp2)
+bayes_auc <- auc(roc_bayes)
+
+temp3 <- predict(gen1, newdata = test_set , type = "probs")
+temp3 <- as.vector(temp3[,1])
+roc_ada <- roc(test_set$AtRisk, temp3)
+ada_auc <- auc(roc_ada)
+
+#Base Code Source: [5]
+
+rocobj1 <- plot.roc(smooth(roc_knn), main="ROC Curves", col="#1c61b6")
+
+rocobj2 <- lines.roc(roc_svm, col="#008600")
+
+rocobj3 <- lines.roc(roc_bayes, col="#ef8600")
+
+rocobj4 <- lines.roc(roc_ada, col="#ae86e3")
+
+legend("bottomright", legend=c("kNN", "SVM", "Bayes", "adaBoost"), col=c("#1c61b6", "#008600","#ef8600","#ae86e3"), lwd=2)
+
+```
+
+The ROC Curves all yield similar results with the exception of our k-nearest neighbors model.  This supports the idea that kNN is our best model, as we guessed from the accuracy scores above.  The lack of granularity in the kNN model is likely due to the fixed number of neighbors, as this model is using that figure to calculate probabilites of class membership.  We have appliede a smoother to kNN to make the comparison more clear.
+
+```{r message=FALSE, warning=FALSE}
+results <- data_frame(method = "kNN", AUC = knn_auc)
+results <- bind_rows(results,
+                          data_frame(method="Naive Bayes",  
+                                     AUC = bayes_auc))
+results <- bind_rows(results,
+                          data_frame(method="SVM",  
+                                     AUC = svm_auc))
+results <- bind_rows(results,
+                          data_frame(method="adaBoost",  
+                                     AUC = ada_auc))
+options(digits = 3)
+results %>% kable
+```
+
+<br>
+It seems clear from this anaylsis that k-Nearest Neighbors (k=8) is the best classifier for at-risk students of the models we used.  This makes some logical sense, as we are predicting the outcome of a student by the other students that are most similar, at least in terms of Euclidean distance.  We also determined that even though many features were correlated, the models we used here needed most if not all of those features to make the best predictions.  We can see from the above tests that macine learning can be used to help educators predict at-risk students from simple survey questions.  The applications of this type of thinking have not yet been adopted yet by many learning institutions, but it seems clear that data science and machine learning can be utilized to help the educational process.
+
+
+#Conclusion:
+
+We first looked as the data using boxplots and scatterplots. Noticing a large amount of the data is binary and categorical we skeptically looked at linear regression.  Since the condition of linearity was not clearly met, the R^2-adjusted was only 0.2292 or 22.92% we see this is not a strong model. Moving to Logit regression we discovered an interesting model: good_GPA ~ club + study + parents + age + band.  Where good_GPA was any GPA one standard deviation above the mean.  Clearly the marital status of ones parents and their age is not with in a students control, however they could choose to join a club and that would increase their odds of having a good_GPA by a factor of 7.483. If a student joins band their odds of having a good_GPA increase by a factor of 1.653. Is a students studies one more hour their odds of having a good_GPA increase by a factor of 1.318.   
+
+We can see that a student applying to a school with a few more hours of study, or if they are in a club, or if they are so muscly inclined in band would have higher odds of having a good GPA thus making them a better candidate. This could be one facet of predicting is a student would do well at their next academic institution.        
+
+Further work would be to have an additional survey of more then one high school and include more questions about the type of club and the time they invest in it. The club beta seems to substantially increase a students odd of a good_GPA.  
+
+Looking at covariance and correlation we see there is no proven impact of club/sport/siblings over GPA. We also see that there is no significant linear relationship established between GPA and Club/parents/study. Hence, the various tests performed above for correlation did not prove any noticeable linear relationship.
+
+Changing our approach slightly we looked to see if Machine Learning could find away to identify and predict if a students was at_risk which we define as one standard deviation below the mean.  Using KNN we found that the number of hours playing games, the number of friends, and the number of songs (or hours spent listening to songs) where the three biggest predictors for a student being at_risk.  Having a number of factors in the model would enable a school advisor to see if a student could potentially be at_risk and recommend some of the activities above.  It is important to note that the two approaches complement each other and provide a richer solution. 
+
+
+#Citations:
+
+[1] http://statistics.ats.ucla.edu/stat/r/dae/logit.htm <br>
+[2] http://www.montefiore.ulg.ac.be/~kvansteen/GBIO0009-1/ac20092010/Class8/Using%20R%20for%20linear%20regression.pdf <br>
+[3] http://www.r-bloggers.com/imputing-missing-data-with-r-mice-package/ by Michy Alice on 10/04/2015 <br>
+[4] http://machinelearningmastery.com/feature-selection-with-the-caret-r-package/, Brownlee, Jason.  11/22/2014 <br>
+[5] Xavier Robin, Natacha Turck, Alexandre Hainard, Natalia Tiberti, Frédérique Lisacek, Jean-Charles Sanchez and Markus Müller (2011). pROC: an open-source package for R and S+ to analyze and compare ROC curves. BMC Bioinformatics, 12, p. 77. DOI: 10.1186/1471-2105-12-77. <br>
+[6] http://www.r-bloggers.com/example-9-17-much-better-pairs-plots/ <br>
+[7] http://www.math.ucla.edu/~anderson/rw1001/library/base/html/cor.html <br>
+[8] http://www.math.ucla.edu/~anderson/rw1001/library/base/html/pairs.html <br>
+[9] https://stat.ethz.ch/R-manual/R-devel/library/graphics/html/pairs.html <br>
