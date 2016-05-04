@@ -9,7 +9,7 @@ Seeking efficiency in the pursuit of education is a perpetual goal, We wish to i
 
 A secondary use would be for a screening tool for colleges to determine which students would perform the best.  Using a predictive model or machine learning to remove some human bias. 
 
-We have used students survey with 745 sample observations from a school but did not get the full population. 
+We have used a student survey with 745 sample observations from a school but did not get the full population. 
 This sample can be considered a very large random sample. Each student's GPA should be relatively independent.  Typically the grades are not directly curved, just individual tests.
 
 There are 21 total survey questions including GPA score and variables are a good mix of binary, categorical and numerical variables.
@@ -472,7 +472,7 @@ pairs(~club+band+GPA+study,data = tab, lower.panel=panel.smooth, col = "blue")
 
 Correlation between GPA and other variables should be substantive for any covariate adjustment to be meaningful and effective. No distinct and measurable relationship between above variables as depicted by correlation matrix and plots of pair of variables.
 
-Corelation test conducated as follows:
+Correlation test conducated as follows:
 Test for Association/Correlation Between Pairs with p values/confidence levels -
 
 ```{r echo= FALSE}
@@ -485,7 +485,7 @@ cor.test(~study+GPA,  data = tab)
 
 The above low p-value does NOT measure the strength of correlation. It measures how likely it could have arisen in case there actually was no effect with GPA  signifies no strong #corelation
 No proven impact of club/sport/siblings over GPA
-To prove that no substantive linear relation exists between  variables, we will draw plots for variables as below 
+To prove that no substantive linear relation exists between variables, we will draw plots for variables as below 
 
 ```{r echo= FALSE}
 #Again below plot depicts no linear relationship
@@ -832,15 +832,18 @@ It seems clear from this anaylsis that k-Nearest Neighbors (k=8) is the best cla
 
 #Conclusion:
 
-We first looked as the data using boxplots and scatterplots. Noticing a large amount of the data is binary and categorical we skeptically looked at linear regression.  Since the condition of linearity was not clearly met, the R^2-adjusted was only 0.2292 or 22.92% we see this is not a strong model. Moving to Logit regression we discovered an interesting model: good_GPA ~ club + study + parents + age + band.  Where good_GPA was any GPA one standard deviation above the mean.  Clearly the marital status of ones parents and their age is not with in a students control, however they could choose to join a club and that would increase their odds of having a good_GPA by a factor of 7.483. If a student joins band their odds of having a good_GPA increase by a factor of 1.653. Is a students studies one more hour their odds of having a good_GPA increase by a factor of 1.318.   
+We first looked as the data using boxplots and scatterplots. Noticing a large amount of the data is binary and categorical we skeptically looked at linear regression.  Since the condition of linearity was not clearly met, the R^2-adjusted was only 0.2292 or 22.92% we see this is not a strong model. Moving to Logit regression we discovered an interesting model: good_GPA ~ club + study + parents + age + band.  Where good_GPA was any GPA one standard deviation above the mean.  Clearly the marital status of one's parents and their age is not within a student's control, however if they had chosen to join a club that would increase their odds of having a good_GPA by a factor of 7.483. If a student joined band their odds of having a good_GPA increase by a factor of 1.653. If a student studied one more hours their odds of having a good_GPA increase by a factor of 1.318.   
 
-We can see that a student applying to a school with a few more hours of study, or if they are in a club, or if they are so muscly inclined in band would have higher odds of having a good GPA thus making them a better candidate. This could be one facet of predicting is a student would do well at their next academic institution.        
+We can see that a student applying to a school with a few more hours of study, or if they are in a club, or if they are musicly inclined in band, would have higher odds of having a good GPA thus making them a better candidate. This could be one facet of predicting if a student would do well at their next academic institution.
+
+With the Logit model we must remember that correlation is not causation.  If a student is in a club then odds of their GPA going up increase by a factor of 7.483.  That does not mean any student could join a club and their GPA would increase by that factor.
 
 Further work would be to have an additional survey of more then one high school and include more questions about the type of club and the time they invest in it. The club beta seems to substantially increase a students odd of a good_GPA.  
 
-Looking at covariance and correlation we see there is no proven impact of club/sport/siblings over GPA. We also see that there is no significant linear relationship established between GPA and Club/parents/study. Hence, the various tests performed above for correlation did not prove any noticeable linear relationship.
+In order to discover relationships between variables, we evaluated models using linear regression. While Looking at covariance and correlation, we see there is no proven impact of club/sport/siblings on GPA. Further analysis using scatterplots, descriptive statistics, and chi-square analysis examined the association but no significant strength or direction was detected. 
+We also see that there is no significant linear relationship established between GPA and club/parents/study by using pairs plotting. Hence, the various tests performed above for correlation did not indicate any noticeable linear relationship.
 
-Changing our approach slightly we looked to see if Machine Learning could find away to identify and predict if a students was at_risk which we define as one standard deviation below the mean.  Using KNN we found that the number of hours playing games, the number of friends, and the number of songs (or hours spent listening to songs) where the three biggest predictors for a student being at_risk.  Having a number of factors in the model would enable a school advisor to see if a student could potentially be at_risk and recommend some of the activities above.  It is important to note that the two approaches complement each other and provide a richer solution. 
+Changing our approach slightly we looked to see if machine learning could find a way to identify and predict if a students is at-risk, which we defined as one standard deviation below the mean.  Using kNN we found that the number of hours playing games, the number of friends, and the number of songs (or hours spent listening to songs) were the three biggest predictors for a student being at-risk.  Having a number of factors in the model would enable a school advisor to see if a student could potentially be at-risk and recommend some of the activities above.  It is important to note that the two approaches complement each other and provide a richer solution. 
 
 
 #Citations:
