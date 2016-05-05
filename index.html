@@ -67,7 +67,7 @@ Linear regression left us with over 75% of the error of the model unaccounted fo
 <p>
 We used a generalized linear model (glm) with a logit link function. After many tests, we developed the following model: Good_GPA ~ number of clubs + hours of study + parents marital status + age + band.</p>
 
-<img src="images/logit.png" alt="" width="530" height="513" border="0">
+<img src="images/logit.png" alt="" width="600" height="513" border="0">
 
 <p>
 Clearly the marital status of one's parents and the student's age is not within a students control. However, if they had chosen to join a club, that would increase their odds of having a good_GPA by a factor of 7.483. If a student joined band, their odds of having a good_GPA increase by a factor of 1.653. Every additional hour a student studies increases their odds of a good_GPA by a factor of 1.318.</p>
@@ -77,7 +77,7 @@ A school application showing a student that spends lots of time studying or a st
 Further work would be to have an additional survey of more then one high school and include more questions about the type of club and the time they invest in it. The club predictor seems to substantially increase a student's odds of a good_GPA.</p>
 
 <h4>Covariance and Correlation:</h4>
-<img src="images/cov_corr.png" alt="" width="638" height="446" border="0" align="middle">
+<img src="images/cov_corr.png" alt="" width="640" height="437" border="0" align="middle">
 
 <p>
 We have thus far focused on logistic relationships, which look at what often happens with one variable given another variable (odds). In contrast a linear relationship is a direct relationship between variables. Looking at covariance and correlation, we see that there is no significant linear relationship established between GPA and club/parents/study. The various tests performed above for correlation did not prove any noticeable linear relationship. Thus reaffirming our move to Logistic Regression</p>
@@ -91,15 +91,15 @@ Changing our approach slightly, we looked to see if Machine Learning could find 
 For this analysis we will focus on the at-risk students. We tried several different machine learning algorithms and tasked them with classifying our students. We used an 80/20 split for training and testing data.</p>
 <p>Using pure accuracy as a guide:</p>
 
-<img src="images/ml_chart1.png" alt="" width="932" height="167" border="0">
+<img src="images/ml_chart1.png" alt="" width="913" height="146" border="0">
 
 <p>K-Nearest Neighbors with k=8 was strong. As was adaBoost, a 'boosting' algorithm used along with recursive trees.</p>
 <p>ROC Curve comparison:</p>
-<img src="images/roc_curve.png" alt="" width="669" height="478" border="0">
+<img src="images/roc_curve.png" alt="" width="692" height="479" border="0">
 
 <p>Using AUC (Area Under the Curve) gives us a better idea of the overall comparisons:</p>
 
-<img src="images/ml_chart2.png" alt="" width="930" height="165" border="0">
+<img src="images/ml_chart2.png" alt="" width="913" height="161" border="0">
 
 <p>In this case kNN (8) separates itself as the best algorithm.</p>
 
